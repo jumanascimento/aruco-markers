@@ -44,6 +44,12 @@ const char* keys  =
         ;
 }
 
+// Função para calcular a distância
+float calculateDistance(float focal_length, float object_height, int image_height, float object_height_px, float sensor_height) {
+    float distance_m = (focal_length * object_height * image_height) / (object_height_px * sensor_height);
+    return distance_m * 1000.0; // converter metros para milímetros
+}
+
 int main(int argc, char **argv)
 {
     cv::CommandLineParser parser(argc, argv, keys);
@@ -134,6 +140,18 @@ int main(int argc, char **argv)
             std::cout << "Translation: " << tvecs[0]
                 << "\tRotation: " << rvecs[0] 
                 << std::endl;
+
+            // Cálculo da distância
+float focal_length = 1430.0f;   // Valor fornecido: 1430 px
+float object_height = marker_length_m;
+int image_height = 401;         // Valor fornecido: 401 px
+float object_height_px = tvecs[0](1);
+float sensor_height = 220.0f;   // Valor fornecido: 220 mm
+
+float distance = (focal_length * object_height * image_height) / (object_height_px * sensor_height);
+
+std::cout << "Distance: " << distance << " mm" << std::endl;
+            
             
             // Draw axis for each marker
             for(int i=0; i < ids.size(); i++)

@@ -139,11 +139,11 @@ int main(int argc, char **argv)
                 << std::endl;
 
             // Cálculo da distância
-            float focal_length = camera_matrix.at<double>(0, 0);
+            float focal_length = 1430.0f;
             float object_height = marker_length_m;
-            int image_height = image.rows;
+            int image_height = 401;
             float object_height_px = tvecs[0](1);  // Utilizando o parâmetro y como object_height_px
-            float sensor_height = camera_matrix.at<double>(1, 1);
+            float sensor_height = 180.0f;
 
             float distance = calculateDistance(focal_length, object_height, image_height, object_height_px, sensor_height);
 

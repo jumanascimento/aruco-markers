@@ -26,28 +26,26 @@
 #include <iostream>
 #include <cstdlib>
 
-
 namespace {
-const char* about = "Pose estimation of ArUco marker images";
-const char* keys  =
-        "{d        |16    | dictionary: DICT_4X4_50=0, DICT_4X4_100=1, "
-        "DICT_4X4_250=2, DICT_4X4_1000=3, DICT_5X5_50=4, DICT_5X5_100=5, "
-        "DICT_5X5_250=6, DICT_5X5_1000=7, DICT_6X6_50=8, DICT_6X6_100=9, "
-        "DICT_6X6_250=10, DICT_6X6_1000=11, DICT_7X7_50=12, DICT_7X7_100=13, "
-        "DICT_7X7_250=14, DICT_7X7_1000=15, DICT_ARUCO_ORIGINAL = 16}"
-        "{h        |false | Print help }"
-        "{l        |      | Actual marker length in meter }"
-        "{v        |<none>| Custom video source, otherwise '0' }"
-        "{h        |false | Print help }"
-        "{l        |      | Actual marker length in meter }"
-        "{v        |<none>| Custom video source, otherwise '0' }"
-        ;
+    const char* about = "Pose estimation of ArUco marker images";
+    const char* keys  =
+            "{d        |16    | dictionary: DICT_4X4_50=0, DICT_4X4_100=1, "
+            "DICT_4X4_250=2, DICT_4X4_1000=3, DICT_5X5_50=4, DICT_5X5_100=5, "
+            "DICT_5X5_250=6, DICT_5X5_1000=7, DICT_6X6_50=8, DICT_6X6_100=9, "
+            "DICT_6X6_250=10, DICT_6X6_1000=11, DICT_7X7_50=12, DICT_7X7_100=13, "
+            "DICT_7X7_250=14, DICT_7X7_1000=15, DICT_ARUCO_ORIGINAL = 16}"
+            "{h        |false | Print help }"
+            "{l        |      | Actual marker length in meter }"
+            "{v        |<none>| Custom video source, otherwise '0' }"
+            "{h        |false | Print help }"
+            "{l        |      | Actual marker length in meter }"
+            "{v        |<none>| Custom video source, otherwise '0' }"
+            ;
 }
 
 // Função para calcular a distância
 float calculateDistance(float focal_length, float object_height, int image_height, float object_height_px, float sensor_height) {
-    float distance_m = (focal_length * object_height * image_height) / (object_height_px * sensor_height);
-    return distance_m * 1000.0; // converter metros para milímetros
+    return (focal_length * object_height * image_height) / (object_height_px * sensor_height);
 }
 
 int main(int argc, char **argv)
@@ -132,62 +130,26 @@ int main(int argc, char **argv)
         // if at least one marker detected
         if (ids.size() > 0)
         {
-            cv::aruco::drawDetectedMarkers(image_copy, corners, ids);
             std::vector<cv::Vec3d> rvecs, tvecs;
             cv::aruco::estimatePoseSingleMarkers(corners, marker_length_m,
                     camera_matrix, dist_coeffs, rvecs, tvecs);
-                    
+
             std::cout << "Translation: " << tvecs[0]
                 << "\tRotation: " << rvecs[0] 
                 << std::endl;
 
             // Cálculo da distância
-float focal_length = 1430.0f;   // Valor fornecido: 1430 px
-float object_height = marker_length_m;
-int image_height = 401;         // Valor fornecido: 401 px
-float object_height_px = tvecs[0](1);
-float sensor_height = 220.0f;   // Valor fornecido: 220 mm
+            float focal_length = camera_matrix.at<double>(0, 0);
+            float object_height = marker_length_m;
+            int image_height = image.rows;
+            float object_height_px = tvecs[0](1);  // Utilizando o parâmetro y como object_height_px
+            float sensor_height = camera_matrix.at<double>(1, 1);
 
-float distance = (focal_length * object_height * image_height) / (object_height_px * sensor_height);
+            float distance = calculateDistance(focal_length, object_height, image_height, object_height_px, sensor_height);
 
-std::cout << "Distance: " << distance << " mm" << std::endl;
-            
-            
-            // Draw axis for each marker
-            for(int i=0; i < ids.size(); i++)
-            {
-                cv::aruco::drawAxis(image_copy, camera_matrix, dist_coeffs,
-                        rvecs[i], tvecs[i], 0.1);
-
-                // This section is going to print the data for all the detected
-                // markers. If you have more than a single marker, it is
-                // recommended to change the below section so that either you
-                // only print the data for a specific marker, or you print the
-                // data for each marker separately.
-                vector_to_marker.str(std::string());
-                vector_to_marker << std::setprecision(4)
-                                 << "x: " << std::setw(8) << tvecs[0](0);
-                cv::putText(image_copy, vector_to_marker.str(),
-                            cv::Point(10, 30), cv::FONT_HERSHEY_SIMPLEX, 0.6,
-                            cv::Scalar(0, 252, 124), 1, CV_AVX);
-
-                vector_to_marker.str(std::string());
-                vector_to_marker << std::setprecision(4)
-                                 << "y: " << std::setw(8) << tvecs[0](1);
-                cv::putText(image_copy, vector_to_marker.str(),
-                            cv::Point(10, 50), cv::FONT_HERSHEY_SIMPLEX, 0.6,
-                            cv::Scalar(0, 252, 124), 1, CV_AVX);
-
-                vector_to_marker.str(std::string());
-                vector_to_marker << std::setprecision(4)
-                                 << "z: " << std::setw(8) << tvecs[0](2);
-                cv::putText(image_copy, vector_to_marker.str(),
-                            cv::Point(10, 70), cv::FONT_HERSHEY_SIMPLEX, 0.6,
-                            cv::Scalar(0, 252, 124), 1, CV_AVX);
-            }
+            std::cout << "Distance: " << distance << std::endl;
         }
 
-        imshow("Pose estimation", image_copy);
         char key = (char)cv::waitKey(wait_time);
         if (key == 27)
             break;

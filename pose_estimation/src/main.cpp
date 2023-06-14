@@ -92,7 +92,7 @@ int main(int argc, char **argv)
             in_video.open(source); // id
         }
     } else {
-        in_video.open(2);
+        in_video.open(0);
     }
 
     if (!parser.check()) {

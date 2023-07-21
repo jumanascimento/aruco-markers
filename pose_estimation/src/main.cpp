@@ -1,52 +1,12 @@
-/*
- * Copyright (c) 2019 Flight Dynamics and Control Lab
- *
- * Permission is hereby granted, free of charge, to any person obtaining a copy
- * of this software and associated documentation files (the "Software"), to deal
- * in the Software without restriction, including without limitation the rights
- * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
- * copies of the Software, and to permit persons to whom the Software is
- * furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included in 
- * all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
- * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
- * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
- * SOFTWARE.
- *
- */
-
 #include <opencv2/opencv.hpp>
 #include <opencv2/aruco.hpp>
 #include <iostream>
-#include <cstdlib>
-
-namespace {
-const char* about = "Pose estimation of ArUco marker images";
-const char* keys  =
-        "{d        |16    | dictionary: DICT_4X4_50=0, DICT_4X4_100=1, "
-        "DICT_4X4_250=2, DICT_4X4_1000=3, DICT_5X5_50=4, DICT_5X5_100=5, "
-        "DICT_5X5_250=6, DICT_5X5_1000=7, DICT_6X6_50=8, DICT_6X6_100=9, "
-        "DICT_6X6_250=10, DICT_6X6_1000=11, DICT_7X7_50=12, DICT_7X7_100=13, "
-        "DICT_7X7_250=14, DICT_7X7_1000=15, DICT_ARUCO_ORIGINAL = 16}"
-        "{h        |false | Print help }"
-        "{l        |      | Actual marker length in meter }"
-        "{v        |<none>| Custom video source, otherwise '0' }"
-        "{h        |false | Print help }"
-        "{l        |      | Actual marker length in meter }"
-        "{v        |<none>| Custom video source, otherwise '0' }"
-        ;
-}
+#include <iomanip>
 
 // Função para calcular a distância
-float calculateDistance(float focal_length, float object_height, int image_height, float object_height_px, float sensor_height) {
-    float distance_m = (focal_length * object_height * image_height) / (object_height_px * sensor_height);
-    return distance_m * 1000.0; // converter metros para milímetros
+float calculateDistance(float focal_length_px, float object_height_mm, int image_height_px, float object_height_px, float sensor_height_mm) {
+    float distance_m = (focal_length_px * object_height_mm * image_height_px) / (object_height_px * sensor_height_mm);
+    return distance_m / 1000.0; // Converter milímetros para metros
 }
 
 // Função para calcular o erro de distância
@@ -54,146 +14,128 @@ float calculateDistanceError(float actual_distance, float measured_distance) {
     return std::abs(actual_distance - measured_distance);
 }
 
-int main(int argc, char **argv)
-{
-    cv::CommandLineParser parser(argc, argv, keys);
-    parser.about(about);
+int main() {
 
-    if (argc < 2) {
-        parser.printMessage();
-        return 1;
-    }
+    // Definir os parâmetros da câmera
+    float focal_length_px = 695.802000; // Distância focal em pixels
+    float sensor_height_mm = 152.4; // Altura do sensor em milímetros
+    float object_height_mm = 103.0; // Altura do objeto em milímetros
+    int image_height_px = 480; // Altura da imagem em pixels
+    
+    int max_distance_aruco_id = 7;
+    float max_distance_from_camera_m = 3.0; // 3 metros
+    float max_distance_from_ground_m = 1.40; // 1,40 metros
+     float marker_length_m = 0.102;
 
-    if (parser.get<bool>("h")) {
-        parser.printMessage();
-        return 0;
-    }
 
-    int dictionaryId = parser.get<int>("d");
-    float marker_length_m = parser.get<float>("l");
-    int wait_time = 10;
+    cv::Mat camera_matrix = (cv::Mat_<double>(3, 3) << 695.802000, 0.000000, 328.281893,
+                                                        0.000000, 696.308095, 233.812776,
+                                                        0.000000, 0.000000, 1.000000);
 
-    if (marker_length_m <= 0) {
-        std::cerr << "marker length must be a positive value in meter" 
-                  << std::endl;
-        return 1;
-    }
+    cv::Mat dist_coeffs = (cv::Mat_<double>(1, 5) << 0.072282, -0.037522, 0.001242, -0.004470, 0.000000);
 
-    cv::String videoInput = "0";
-    cv::VideoCapture in_video;
-    if (parser.has("v")) {
-        videoInput = parser.get<cv::String>("v");
-        if (videoInput.empty()) {
-            parser.printMessage();
-            return 1;
-        }
-        char* end = nullptr;
-        int source = static_cast<int>(std::strtol(videoInput.c_str(), &end, \
-            10));
-        if (!end || end == videoInput.c_str()) {
-            in_video.open(videoInput); // url
-        } else {
-            in_video.open(source); // id
-        }
-    } else {
-        in_video.open(2);
-    }
+    cv::Ptr<cv::aruco::Dictionary> dictionary = cv::aruco::getPredefinedDictionary(cv::aruco::PREDEFINED_DICTIONARY_NAME(16));
 
-    if (!parser.check()) {
-        parser.printErrors();
-        return 1;
-    }
+    std::cout << "camera_matrix\n" << camera_matrix << std::endl;
+    std::cout << "\ndist_coeffs\n" << dist_coeffs << std::endl;
 
+    cv::VideoCapture in_video(2);
     if (!in_video.isOpened()) {
-        std::cerr << "failed to open video input: " << videoInput << std::endl;
+        std::cerr << "failed to open video input" << std::endl;
         return 1;
     }
 
     cv::Mat image, image_copy;
-    cv::Mat camera_matrix, dist_coeffs;
-    std::ostringstream vector_to_marker;
 
-    cv::Ptr<cv::aruco::Dictionary> dictionary =
-        cv::aruco::getPredefinedDictionary( \
-        cv::aruco::PREDEFINED_DICTIONARY_NAME(dictionaryId));
-
-    cv::FileStorage fs("../../calibration_params.yml", cv::FileStorage::READ);
-
-    fs["camera_matrix"] >> camera_matrix;
-    fs["distortion_coefficients"] >> dist_coeffs;
-
-    std::cout << "camera_matrix\n" << camera_matrix << std::endl;
-    std::cout << "\ndist coeffs\n" << dist_coeffs << std::endl;
-
-    while (in_video.grab())
-    {
+    int wait_time = 10; // Wait for 10 milliseconds between frames
+    
+    
+    while (in_video.grab()) {
         in_video.retrieve(image);
         image.copyTo(image_copy);
         std::vector<int> ids;
-        std::vector<std::vector<cv::Point2f> > corners;
+        std::vector<std::vector<cv::Point2f>> corners;
         cv::aruco::detectMarkers(image, dictionary, corners, ids);
 
-        // if at least one marker detected
-        if (ids.size() > 0)
-        {
+        // If at least one marker detected
+        if (ids.size() > 0) {
             std::vector<cv::Vec3d> rvecs, tvecs;
             cv::aruco::estimatePoseSingleMarkers(corners, marker_length_m,
-                    camera_matrix, dist_coeffs, rvecs, tvecs);
+                camera_matrix, dist_coeffs, rvecs, tvecs);
+
+             int max_distance_aruco_index = -1;
+            for (size_t i = 0; i < ids.size(); ++i) {
+                if (ids[i] == max_distance_aruco_id) {
+                    max_distance_aruco_index = i;
+                    break;
+                }
+            }
+
+            if (max_distance_aruco_index != -1) {
+                // Calculate distance to the ArUco of max distance
+                float focal_length = camera_matrix.at<double>(0, 0); // Obtém o valor da matriz de câmera (focal_length)
+                float object_height_mm = max_distance_from_ground_m * 1000.0; // Converter metros para milímetros
+                float sensor_height_mm = max_distance_from_camera_m * 1000.0; // Converter metros para milímetros
+
+                // Get the bounding rectangle of the marker
+                cv::Rect marker_rect = cv::boundingRect(corners[max_distance_aruco_index]);
+                float object_height_px = static_cast<float>(marker_rect.height);
+
+                // Convert object height to meters
+                float object_height_m = object_height_mm / 1000.0;
+
+                // Calculate image height in meters using the scale factor from the marker size
+                float image_height_m = object_height_m * image.rows / object_height_px;
+
+                float distance = calculateDistance(focal_length, object_height_m, image_height_m, object_height_px, sensor_height_mm / 1000.0);
+
+                std::cout << "Distance to ArUco " << max_distance_aruco_id << ": " << distance << " m" << std::endl;
+
+                // Calculate distance error (example using actual_distance = max_distance_from_camera_m)
+                float actual_distance = max_distance_from_camera_m;
+                float distance_error = calculateDistanceError(actual_distance, distance);
+                std::cout << "Distance Error: " << distance_error << " m" << std::endl;
+            }
+
                     
-            std::cout << "Translation: " << tvecs[0]
-                << "\tRotation: " << rvecs[0] 
-                << std::endl;
 
-            // Cálculo da distância
-            float focal_length = 1430.0f;   // Valor fornecido: 1430 px
-            float object_height = 0.103;
-            int image_height = 401;         // Valor fornecido: 401 px
-            float sensor_height = 209.55f;   // Valor fornecido: 220 mm
-
-            // Get the bounding rectangle of the marker
-            cv::Rect marker_rect = cv::boundingRect(corners[0]);
-
-            // Use the height of the bounding rectangle as the object height in pixels
-            float object_height_px = static_cast<float>(marker_rect.height);
-
-            float distance = calculateDistance(focal_length, object_height, image_height, object_height_px, sensor_height);
-
-            std::cout << "Distance: " << distance << " mm" << std::endl;
-
-            // Calcular o erro de distância
-            float actual_distance = 1000.0; // Distância atual em milímetros
-            float distance_error = calculateDistanceError(actual_distance, distance);
-
-            std::cout << "Distance Error: " << distance_error << " mm" << std::endl;
-            
             // Draw axis for each marker
-            for(int i=0; i < ids.size(); i++)
-            {
-                // This section is going to print the data for all the detected
-                // markers. If you have more than a single marker, it is
-                // recommended to change the below section so that either you
-                // only print the data for a specific marker, or you print the
-                // data for each marker separately.
-                vector_to_marker.str(std::string());
-                vector_to_marker << std::setprecision(4)
-                                 << "x: " << std::setw(8) << tvecs[0](0);
-                std::cout << vector_to_marker.str() << std::endl;
+            for (int i = 0; i < ids.size(); i++) {
+                cv::aruco::drawAxis(image_copy, camera_matrix, dist_coeffs, rvecs[i], tvecs[i], 0.1);
+
+                // Esta seção irá imprimir os dados para todos os marcadores detectados.
+                // Se você tiver mais de um marcador, é recomendado modificar esta seção
+                // para imprimir os dados de um marcador específico ou imprimir os dados
+                // de cada marcador separadamente.
+                std::ostringstream vector_to_marker;
+
+                vector_to_marker << std::fixed << std::setprecision(4) << "x: " << std::setw(8) << tvecs[0](0);
+                cv::putText(image_copy, vector_to_marker.str(),
+                            cv::Point(10, 30), cv::FONT_HERSHEY_SIMPLEX, 0.6,
+                            cv::Scalar(0, 252, 124), 1, cv::LINE_AA);
 
                 vector_to_marker.str(std::string());
-                vector_to_marker << std::setprecision(4)
-                                 << "y: " << std::setw(8) << tvecs[0](1);
-                std::cout << vector_to_marker.str() << std::endl;
+                vector_to_marker << std::fixed << std::setprecision(4) << "y: " << std::setw(8) << tvecs[0](1);
+                cv::putText(image_copy, vector_to_marker.str(),
+                            cv::Point(10, 50), cv::FONT_HERSHEY_SIMPLEX, 0.6,
+                            cv::Scalar(0, 252, 124), 1, cv::LINE_AA);
 
                 vector_to_marker.str(std::string());
-                vector_to_marker << std::setprecision(4)
-                                 << "z: " << std::setw(8) << tvecs[0](2);
-                std::cout << vector_to_marker.str() << std::endl;
+                vector_to_marker << std::fixed << std::setprecision(4) << "z: " << std::setw(8) << tvecs[0](2);
+                cv::putText(image_copy, vector_to_marker.str(),
+                            cv::Point(10, 70), cv::FONT_HERSHEY_SIMPLEX, 0.6,
+                            cv::Scalar(0, 252, 124), 1, cv::LINE_AA);
             }
         }
 
+        cv::imshow("Pose estimation", image_copy);
+        char key = (char)cv::waitKey(wait_time);
+        if (key == 27)
+            break;
     }
 
     in_video.release();
 
     return 0;
 }
+
